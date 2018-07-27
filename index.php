@@ -68,10 +68,11 @@ function system_log($logContent, $mark = 'ERROR')
         $handle = fopen($logFile, 'a'); // 文件不存在则自动创建
 
         if (!filesize($logFile)) {
-            fwrite($handle, "<?php defined('CORE_PATH') or die('No direct script access allowed.'); ?>" . PHP_EOL . PHP_EOL);
+            fwrite($handle, "<?php defined('VENDOR_PATH') or die('No direct script access allowed.'); ?>" . PHP_EOL . PHP_EOL);
             chmod($logFile, 0666);
         }
-        fwrite($handle, $mark . ' - ' . date('Y-m-d H:i:s') . ' --> ' . 'URI: ' . $_SERVER['REQUEST_URI'] . PHP_EOL . 'REMOTE_ADDR: ' . $_SERVER['REMOTE_ADDR'] . PHP_EOL . 'SERVER_ADDR: ' . $_SERVER['SERVER_ADDR'] . PHP_EOL . (is_string($logContent) ? $logContent : var_export($logContent, true)) . PHP_EOL);
+
+        fwrite($handle, $mark . ' - ' . date('Y-m-d H:i:s') . ' --> ' . (IS_CLI ? 'CLI' : 'URI: ' . $_SERVER['REQUEST_URI'] . PHP_EOL . 'REMOTE_ADDR: ' . $_SERVER['REMOTE_ADDR'] . PHP_EOL . 'SERVER_ADDR: ' . $_SERVER['SERVER_ADDR']) . PHP_EOL . (is_string($logContent) ? $logContent : var_export($logContent, true)) . PHP_EOL); // CLI模式下，$_SERVER中几乎无可用值
 
         fclose($handle);
     } catch (\Exception $e) {
@@ -213,7 +214,7 @@ class SignIn
 
         // 签到不成功，推送到微信
         if ($error) {
-            ServerChan::send($sendKey, $error, "具体情况如下：\n\nerror code: " . $data->code . "\n\n" . ($data->info ?: '( ◜◡‾)っ如题'));
+            ServerChan::send($sendKey, $error, "具体情况如下：\n\nerror code: " . $data->code . "\n\n" . ($data->info ?: 'ʅ（=ˇωˇ=）ʃ如题'));
         }
 
         return $curl->response;
@@ -273,7 +274,7 @@ class SignIn
                 system_log($name . ' - 恭喜你抽中' . $awardName . '，发财了发财了~ #' . $data->code . ' - ' . $data->obj . ' - ' . $data->info, 'LOG');
 
                 // 推送到微信
-                ServerChan::send($sendKey, $name . ' - 恭喜你抽中' . $awardName . '，发财了发财了~', "具体情况如下：\n\ncode: " . $data->code . "\n\n" . ($data->info ?: '( ◜◡‾)っ如题'));
+                ServerChan::send($sendKey, $name . ' - 恭喜你抽中' . $awardName . '，发财了发财了~', "具体情况如下：\n\ncode: " . $data->code . "\n\n" . ($data->info ?: 'ʅ（=ˇωˇ=）ʃ如题'));
             }
         } else {
             switch ($data->code) {
