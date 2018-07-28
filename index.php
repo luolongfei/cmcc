@@ -18,12 +18,6 @@ date_default_timezone_set('Asia/Shanghai');
 // Server酱微信推送url
 define('SC_URL', 'https://pushbear.ftqq.com/sub');
 
-// CMCC签到地址
-define('CMCC_SIGNIN_URL', 'http://218.205.252.24:18081/scmccCampaign/signCalendar/sign.do');
-
-// CMCC抽奖地址
-define('CMCC_LOTTERY_URL', 'http://218.205.252.24:18081/scmccCampaign/dazhuanpan/dzpDraw.do');
-
 /**
  * 定制错误处理
  */
@@ -85,8 +79,20 @@ require __DIR__ . DS . 'serverchan.php';
 
 use Curl\Curl;
 
-class SignIn
+class CMCC
 {
+    // CMCC签到地址
+    const CMCC_SIGNIN_URL = 'http://218.205.252.24:18081/scmccCampaign/signCalendar/sign.do';
+
+    // CMCC抽奖地址
+    const CMCC_LOTTERY_URL = 'http://218.205.252.24:18081/scmccCampaign/dazhuanpan/dzpDraw.do';
+
+    // CMCC奖品信息地址
+    const CMCC_PRIZEINFO_URL = 'http://218.205.252.24:18081/scmccCampaign/signCalendar/queryPrizeAndDrawStatus.do';
+
+    // 签到兑奖地址
+    const CMCC_GETPRIZE_URL = 'http://218.205.252.24:18081/scmccCampaign/signCalendar/draw.do';
+
     /**
      * @var array 奖品
      */
@@ -102,29 +108,7 @@ class SignIn
     ];
 
     /**
-     * @var array 用户信息
-     */
-    public $userInfo = [
-        [ // mom
-            'name' => '老妈',
-            'sendKey' => '2885-XXX', // 微信推送通道
-            'SSOCookie' => 'XXX', // 令牌
-            'smsCityCookie' => 11, // 城市代码
-            'cstamp' => 1532404831157, // 登录时间
-            'userAgent' => 'Mozilla/5.0 (Linux; Android 5.1; m2 Build/LMY47D; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/44.0.2403.147 Mobile Safari/537.36/3.4.4 scmcc.mobile' // 客户端
-        ],
-        [ // me
-            'name' => '罗叔叔',
-            'sendKey' => '2885-XXX', // 微信推送通道
-            'SSOCookie' => 'XXX', // 令牌
-            'smsCityCookie' => 27, // 城市代码
-            'cstamp' => 1532404831157, // 登录时间
-            'userAgent' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 11_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15G77/3.4.4 scmcc.mobile' // 客户端
-        ],
-    ];
-
-    /**
-     * @var SignIn
+     * @var CMCC
      */
     protected static $instance;
 
@@ -174,7 +158,7 @@ class SignIn
             'cstamp' => $cstamp
         ]);
         $curl->setTimeout(static::$timeOut);
-        $curl->post(CMCC_SIGNIN_URL, [
+        $curl->post(static::CMCC_SIGNIN_URL, [
             'SSOCookie' => $SSOCookie,
         ]);
 
@@ -183,10 +167,8 @@ class SignIn
             throw new \Exception('Curl 错误 - 自动签到 #' . $curl->errorCode . ' - ' . $curl->errorMessage . "\n");
         }
 
-        $curl->close();
-
         /**
-         * 解析接口返回值
+         * 解析签到接口返回值
          */
         $error = '';
         $data = $curl->response->result;
@@ -216,6 +198,74 @@ class SignIn
         if ($error) {
             ServerChan::send($sendKey, $error, "具体情况如下：\n\nerror code: " . $data->code . "\n\n" . ($data->info ?: 'ʅ（=ˇωˇ=）ʃ如题'));
         }
+
+        /**
+         * 取得签到奖品信息以及当前已签天数
+         */
+        $curl->post(static::CMCC_PRIZEINFO_URL, [
+            'SSOCookie' => $SSOCookie,
+        ]);
+
+        if ($curl->error) {
+            ServerChan::send($sendKey, $name . ' - Curl 错误 - 获取签到奖品以及已签天数', "具体情况如下：\n\n" . $curl->errorCode . ' - ' . $curl->errorMessage);
+            throw new \Exception('Curl 错误 - 获取签到奖品以及已签天数 #' . $curl->errorCode . ' - ' . $curl->errorMessage . "\n");
+        }
+
+        $message = '';
+        $dayNum = $curl->response->result->obj->dayNum; // 已签天数
+        foreach ($curl->response->result->obj->prizes as $prize) {
+            if ($prize->DAYCOUNT <= $dayNum && $prize->DRAWSTATUS == 0 && strpos($prize->PRIZENAME, '爱奇艺') === false) { // 满足兑奖条件，忽略无用的爱奇艺流量
+                /**
+                 * 兑奖
+                 */
+                $curl->post(static::CMCC_GETPRIZE_URL, [
+                    'SSOCookie' => $SSOCookie,
+                    'type' => $prize->TYPE
+                ]);
+
+                if ($curl->error) {
+                    system_log($name . 'Curl 错误 - 兑奖 #' . $curl->errorCode . ' - ' . $curl->errorMessage . "\n");
+                } else {
+                    switch ($curl->response->result->code) {
+                        case 0:
+                            // 兑奖成功
+                            $message .= str_replace('|', '', $prize->PRIZENAME) . "流量\n\n";
+                            break;
+                        case 1:
+                            system_log($name . ' - SSOCookie失效了，需要重新登录获取 兑奖出错 - ' . str_replace('|', '', $prize->PRIZENAME) . '流量');
+                            break;
+                        case 2:
+                        case 5:
+                            system_log($name . ' - 服务器繁忙 - 兑奖出错 - ' . str_replace('|', '', $prize->PRIZENAME) . '流量');
+                            break;
+                        case 3:
+                            system_log($name . ' - 活动未开始或已结束 - 兑奖出错 - ' . str_replace('|', '', $prize->PRIZENAME) . '流量');
+                            break;
+                        case 4:
+                            system_log($name . ' - 重复兑换该奖品 - 兑奖出错 - ' . str_replace('|', '', $prize->PRIZENAME) . '流量');
+                            break;
+                        case 6:
+                            system_log($name . ' - 该奖品被抢完 - 兑奖出错 - ' . str_replace('|', '', $prize->PRIZENAME) . '流量');
+                            break;
+                        case 7:
+                            system_log($name . ' - 未抽中，不予兑换 - 兑奖出错 - ' . str_replace('|', '', $prize->PRIZENAME) . '流量');
+                            break;
+                        default:
+                            system_log($name . ' - 兑奖出错 - 未知错误');
+                    }
+                }
+
+                sleep(1); // 防止操作过于频繁
+            }
+        }
+
+        // 推送奖品兑换通知
+        if ($message) {
+            ServerChan::send($sendKey, '笨笨的机器人帮你兑换了奖品哦~', '在过去的' . $dayNum . "天里，笨笨的机器人每天都有帮你签到，功夫不负有心人，终于把辛勤的汗水换成奖品啦~\n\n现在笨笨的机器人帮你兑换了如下奖品：\n\n" . $message . "\n\n\n\n(๑¯◡¯๑)快查查看吧，哈哈~");
+            system_log($name . " - 通过签到兑换奖品 - \n\n" . $message);
+        }
+
+        $curl->close();
 
         return $curl->response;
     }
@@ -248,7 +298,7 @@ class SignIn
             'cstamp' => $cstamp
         ]);
         $curl->setTimeout(static::$timeOut);
-        $curl->post(CMCC_LOTTERY_URL . '?t=' . mt_rand(), [
+        $curl->post(static::CMCC_LOTTERY_URL . '?t=' . mt_rand(), [
             'SSOCookie' => $SSOCookie,
         ]);
 
@@ -260,7 +310,7 @@ class SignIn
         $curl->close();
 
         /**
-         * 解析接口返回值
+         * 解析抽奖接口返回值
          */
         $data = $curl->response->dzpDraw;
         if ($data->obj != null) { // 中奖的情况
@@ -297,11 +347,12 @@ class SignIn
 }
 
 try {
-    foreach (SignIn::instance()->userInfo as $user) { // 多用户
+    $userInfo = require __DIR__ . DS . 'config.php';
+    foreach ($userInfo as $user) { // 多用户
         /**
          * 先签到
          */
-        SignIn::instance()->autoSignIn(
+        CMCC::instance()->autoSignIn(
             $user['SSOCookie'],
             $user['smsCityCookie'],
             $user['cstamp'],
@@ -315,7 +366,7 @@ try {
         /**
          * 再抽奖
          */
-        SignIn::instance()->autoLottery(
+        CMCC::instance()->autoLottery(
             $user['SSOCookie'],
             $user['smsCityCookie'],
             $user['cstamp'],
