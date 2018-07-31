@@ -347,6 +347,10 @@ class CMCC
 }
 
 try {
+    if (!IS_CLI && (!isset($_GET['key']) || $_GET['key'] != 20110901)) { // 防止蜘蛛或非本人触发
+        throw new \Exception('非法触发。');
+    }
+
     $userInfo = require __DIR__ . DS . 'config.php';
     foreach ($userInfo as $user) { // 多用户
         /**
