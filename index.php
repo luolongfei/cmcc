@@ -100,9 +100,9 @@ class CMCC
         1 => '100M流量',
         2 => '200M流量',
         3 => '300M流量',
-        4 => '200M爱奇艺流量',
-        5 => '300M爱奇艺流量',
-        6 => '500M爱奇艺流量',
+        4 => '200M定向流量（无用）',
+        5 => '300M定向流量（无用）',
+        6 => '500M定向流量（无用）',
         7 => '谢谢参与',
         8 => '谢谢参与'
     ];
@@ -214,7 +214,7 @@ class CMCC
         $message = '';
         $dayNum = $curl->response->result->obj->dayNum; // 已签天数
         foreach ($curl->response->result->obj->prizes as $prize) {
-            if ($prize->DAYCOUNT <= $dayNum && $prize->DRAWSTATUS == 0 && strpos($prize->PRIZENAME, '爱奇艺') === false) { // 满足兑奖条件，忽略无用的爱奇艺流量
+            if ($prize->DAYCOUNT <= $dayNum && $prize->DRAWSTATUS == 0 && strpos($prize->PRIZENAME, '视频') === false) { // 满足兑奖条件，忽略无用的定向流量
                 /**
                  * 兑奖
                  */
@@ -318,7 +318,7 @@ class CMCC
             $awardKey = $data->obj % 7;
             $awardName = isset(static::$awards[$awardKey]) ? static::$awards[$awardKey] : '未知奖品';
 
-            if (strpos($awardName, '爱奇艺') !== false) { // 抽中了没得任何卵用的爱奇艺流量
+            if (strpos($awardName, '定向') !== false) { // 抽中了没得任何卵用的定向视频流量
                 system_log($name . ' - 同没中奖，去你喵的没有任何卵用的' . $awardName . ' #' . $data->code . ' - ' . $data->obj . ' - ' . $data->info, 'LOG');
             } else {
                 system_log($name . ' - 恭喜你抽中' . $awardName . '，发财了发财了~ #' . $data->code . ' - ' . $data->obj . ' - ' . $data->info, 'LOG');
