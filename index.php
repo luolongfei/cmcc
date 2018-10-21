@@ -93,6 +93,9 @@ class CMCC
     // 签到兑奖地址
     const CMCC_GETPRIZE_URL = 'http://218.205.252.24:18081/scmccCampaign/signCalendar/draw.do';
 
+    // 用户流量情况
+    const CMCC_FLOW_INFO = 'http://wap.sc.10086.cn/scmccClient/action.dox?';
+
     /**
      * @var array 奖品
      */
@@ -117,8 +120,66 @@ class CMCC
      */
     protected static $timeOut = 20;
 
+    /**
+     * @var array 配置文件
+     */
+    protected static $config;
+
+    /**
+     * @var string auth cookie
+     */
+    public $SSOCookie;
+
+    /**
+     * @var string 城市
+     */
+    public $smsCityCookie;
+
+    /**
+     * @var int 登录时间
+     */
+    public $cstamp;
+
+    /**
+     * @var string 客户端标识
+     */
+    public $userAgent;
+
+    /**
+     * @var string 用户名
+     */
+    public $name;
+
+    /**
+     * @var string 用户通道
+     */
+    public $sendKey;
+
+    /**
+     * @var string 总流量
+     */
+    public $totalFlow = '未知';
+
+    /**
+     * @var string 剩余流量
+     */
+    public $remainFlow = '未知';
+
+    /**
+     * @var string 已用流量
+     */
+    public $usedFlow = '未知';
+
+    /**
+     * @var string 距结算日天数
+     */
+    public $resetDayNum = '未知';
+
     public function __construct()
     {
+        if (self::$config === null) {
+            self::$config = require __DIR__ . DS . 'config.php';
+        }
     }
 
     public static function instance()
@@ -132,39 +193,33 @@ class CMCC
 
     /**
      * 自动签到
-     * @param string $SSOCookie
-     * @param int $smsCityCookie
-     * @param int $cstamp
-     * @param string $userAgent
-     * @param string $name
-     * @param string $sendKey 通道key
-     * @return object|null
-     * @throws \ErrorException
-     * @throws \Exception
+     * @return null
+     * @throws ErrorException
      */
-    public function autoSignIn($SSOCookie, $smsCityCookie, $cstamp, $userAgent, $name, $sendKey)
+    public function autoSignIn()
     {
         $curl = new Curl();
-        $curl->setUserAgent($userAgent);
-        $curl->setReferrer('http://218.205.252.24:18081/scmccCampaign/signCalendar/index.html?SSOCookie=' . $SSOCookie . '&tt=110&SSCid=0e6b1897bb458c6701a74aab00db25b6b4beb775ae6d9d068d5292b63b6be3da07928386636897575cc6b0f5a503372cf8f1778776a6602c&abStr=8651');
+        $curl->setUserAgent($this->userAgent);
+        $curl->setReferrer('http://218.205.252.24:18081/scmccCampaign/signCalendar/index.html?SSOCookie=' . $this->SSOCookie . '&tt=110&SSCid=0e6b1897bb458c6701a74aab00db25b6b4beb775ae6d9d068d5292b63b6be3da07928386636897575cc6b0f5a503372cf8f1778776a6602c&abStr=8651');
         $curl->setHeaders([
             'Accept' => 'application/json, text/javascript, */*',
             'X-Requested-With' => 'XMLHttpRequest',
             'Content-Type' => 'application/x-www-form-urlencoded'
         ]);
         $curl->setCookies([
-            'SmsNoPwdLoginCookie' => $SSOCookie,
-            'smsCityCookie' => $smsCityCookie,
-            'cstamp' => $cstamp
+            'SmsNoPwdLoginCookie' => $this->SSOCookie,
+            'smsCityCookie' => $this->smsCityCookie,
+            'cstamp' => $this->cstamp
         ]);
         $curl->setTimeout(static::$timeOut);
         $curl->post(static::CMCC_SIGNIN_URL, [
-            'SSOCookie' => $SSOCookie,
+            'SSOCookie' => $this->SSOCookie,
         ]);
 
         if ($curl->error) {
-            ServerChan::send($sendKey, $name . ' - Curl 错误 - 自动签到', "具体情况如下：\n\n" . $curl->errorCode . ' - ' . $curl->errorMessage);
-            throw new \Exception('Curl 错误 - 自动签到 #' . $curl->errorCode . ' - ' . $curl->errorMessage . "\n");
+            ServerChan::send(self::$config['errorReportSendKey'], sprintf('报告，在为%s自动签到时，Curl出错', $this->name), "详情：\n" . $curl->errorMessage);
+
+            return false;
         }
 
         /**
@@ -175,43 +230,40 @@ class CMCC
         switch ($data->code) {
             case 0:
                 // 签到成功
-                system_log($name . ' - 签到成功 #' . $data->code, 'LOG');
+                system_log($this->name .'，签到成功', 'LOG');
                 break;
             case 1:
-                system_log($name . ' - SSOCookie失效了，需要重新登录获取 #' . $data->code . ' - ' . $data->info, 'WARNING');
-                $error = $name . ' - SSOCookie失效了，需要重新登录获取';
+                system_log($error = sprintf('报告，%s的SSOCookie失效了，需要重新登录获取', $this->name), 'WARNING');
                 break;
             case 3:
-                system_log($name . ' - 活动未开始或已结束 #' . $data->code . ' - ' . $data->info, 'LOG');
-                $error = $name . ' - 活动未开始或已结束';
+                system_log($error = sprintf('报告，在为%s自动签到时，发现活动未开始或已结束', $this->name));
                 break;
             case 2:
-                system_log($name . ' - 重复签到，不算哦~ #' . $data->code);
-                $error = $name . ' - 重复签到，不算哦~';
+                system_log($error = sprintf('报告，%s重复签到，请检查程序重复执行的原因', $this->name));
                 break;
             default:
-                system_log($name . ' - 未知错误 #' . $data->code . ' - ' . $data->info, 'WARNING');
-                $error = $name . ' - 未知错误';
+                system_log($error = sprintf('报告，在为%s自动签到时出现未知错误', $this->name));
         }
 
         // 签到不成功，推送到微信
         if ($error) {
-            ServerChan::send($sendKey, $error, "具体情况如下：\n\nerror code: " . $data->code . "\n\n" . ($data->info ?: 'ʅ（=ˇωˇ=）ʃ如题'));
+            ServerChan::send(self::$config['errorReportSendKey'], $error, "详情：\n" . ($data->info ?: '暂无详情，如题所述。'));
         }
 
         /**
          * 取得签到奖品信息以及当前已签天数
          */
         $curl->post(static::CMCC_PRIZEINFO_URL, [
-            'SSOCookie' => $SSOCookie,
+            'SSOCookie' => $this->SSOCookie,
         ]);
 
         if ($curl->error) {
-            ServerChan::send($sendKey, $name . ' - Curl 错误 - 获取签到奖品以及已签天数', "具体情况如下：\n\n" . $curl->errorCode . ' - ' . $curl->errorMessage);
-            throw new \Exception('Curl 错误 - 获取签到奖品以及已签天数 #' . $curl->errorCode . ' - ' . $curl->errorMessage . "\n");
+            ServerChan::send(self::$config['errorReportSendKey'], sprintf('在为%s获取签到奖品以及已签天数时，Curl出错', $this->name), "详情：\n" . $curl->errorMessage);
+
+            return false;
         }
 
-        $message = '';
+        $prizeRes = '';
         $dayNum = $curl->response->result->obj->dayNum; // 已签天数
         foreach ($curl->response->result->obj->prizes as $prize) {
             if ($prize->DAYCOUNT <= $dayNum && $prize->DRAWSTATUS == 0 && strpos($prize->PRIZENAME, '视频') === false) { // 满足兑奖条件，忽略无用的定向流量
@@ -219,39 +271,40 @@ class CMCC
                  * 兑奖
                  */
                 $curl->post(static::CMCC_GETPRIZE_URL, [
-                    'SSOCookie' => $SSOCookie,
+                    'SSOCookie' => $this->SSOCookie,
                     'type' => $prize->TYPE
                 ]);
 
                 if ($curl->error) {
-                    system_log($name . 'Curl 错误 - 兑奖 #' . $curl->errorCode . ' - ' . $curl->errorMessage . "\n");
+                    system_log($this->name . 'Curl 错误 - 兑奖 - ' . $curl->errorMessage);
                 } else {
+                    $currPrize = str_replace('|', '', $prize->PRIZENAME) . '流量';
                     switch ($curl->response->result->code) {
                         case 0:
                             // 兑奖成功
-                            $message .= str_replace('|', '', $prize->PRIZENAME) . "流量\n\n";
+                            $prizeRes .= str_replace('|', '', $prize->PRIZENAME) . '流量，';
                             break;
                         case 1:
-                            system_log($name . ' - SSOCookie失效了，需要重新登录获取 兑奖出错 - ' . str_replace('|', '', $prize->PRIZENAME) . '流量');
+                            system_log($this->name . ' - SSOCookie失效了，需要重新登录获取 兑奖出错 - ' . $currPrize);
                             break;
                         case 2:
                         case 5:
-                            system_log($name . ' - 服务器繁忙 - 兑奖出错 - ' . str_replace('|', '', $prize->PRIZENAME) . '流量');
+                            system_log($this->name . ' - 服务器繁忙 - 兑奖出错 - ' . $currPrize);
                             break;
                         case 3:
-                            system_log($name . ' - 活动未开始或已结束 - 兑奖出错 - ' . str_replace('|', '', $prize->PRIZENAME) . '流量');
+                            system_log($this->name . ' - 活动未开始或已结束 - 兑奖出错 - ' . $currPrize);
                             break;
                         case 4:
-                            system_log($name . ' - 重复兑换该奖品 - 兑奖出错 - ' . str_replace('|', '', $prize->PRIZENAME) . '流量');
+                            system_log($this->name . ' - 重复兑换该奖品 - 兑奖出错 - ' . $currPrize);
                             break;
                         case 6:
-                            system_log($name . ' - 该奖品被抢完 - 兑奖出错 - ' . str_replace('|', '', $prize->PRIZENAME) . '流量');
+                            system_log($this->name . ' - 该奖品被抢完 - 兑奖出错 - ' . $currPrize);
                             break;
                         case 7:
-                            system_log($name . ' - 未抽中，不予兑换 - 兑奖出错 - ' . str_replace('|', '', $prize->PRIZENAME) . '流量');
+                            system_log($this->name . ' - 未抽中，不予兑换 - 兑奖出错 - ' . $currPrize);
                             break;
                         default:
-                            system_log($name . ' - 兑奖出错 - 未知错误');
+                            system_log($this->name . ' - 兑奖出错 - 未知错误 - ' . $currPrize);
                     }
                 }
 
@@ -260,54 +313,61 @@ class CMCC
         }
 
         // 推送奖品兑换通知
-        if ($message) {
-            ServerChan::send($sendKey, '笨笨的机器人帮你兑换了奖品哦~', '在过去的' . $dayNum . "天里，笨笨的机器人每天都有帮你签到，功夫不负有心人，终于把辛勤的汗水换成奖品啦~\n\n现在笨笨的机器人帮你兑换了如下奖品：\n\n" . $message . "\n\n\n\n(๑¯◡¯๑)快查查看吧，哈哈~");
-            system_log($name . " - 通过签到兑换奖品 - \n\n" . $message);
+        if ($prizeRes) {
+            system_log($this->name . " - 通过签到兑换奖品 - " . $prizeRes . '喜大普奔。');
+
+            $this->getFlowInfo($curl);
+
+            ServerChan::send(
+                $this->sendKey,
+                sprintf('%s，机器人为你兑换了：%s当前可用流量为：%s', $this->name, $prizeRes, $this->remainFlow),
+                sprintf(
+                    "详情：\n机器人替你签到**%s**天，**兑换了这些奖品：%s**have fun。\n另外\n#### 本月已用流量为：%s\n#### 剩余可用国内总流量为：%s\n距结算日%s天。\n\n流量机器人敬上",
+                    $dayNum,
+                    $prizeRes,
+                    $this->usedFlow,
+                    $this->remainFlow,
+                    $this->resetDayNum
+                )
+            );
         }
 
+        $response = $curl->response;
         $curl->close();
 
-        return $curl->response;
+        return $response;
     }
 
     /**
      * 自动抽奖
-     * @param string $SSOCookie
-     * @param int $smsCityCookie
-     * @param int $cstamp
-     * @param string $userAgent
-     * @param string $name
-     * @param string $sendKey 通道key
-     * @return object|null
-     * @throws \ErrorException
-     * @throws \Exception
+     * @return bool|null
+     * @throws ErrorException
      */
-    public function autoLottery($SSOCookie, $smsCityCookie, $cstamp, $userAgent, $name, $sendKey)
+    public function autoLottery()
     {
         $curl = new Curl();
-        $curl->setUserAgent($userAgent);
-        $curl->setReferrer('http://218.205.252.24:18081/scmccCampaign/dazhuanpan/index.html?SSOCookie=' . $SSOCookie . '&value=isNeedLogin&tt=1&SSCid=0e6b1897bb458c6701a74aab00db25b6b4beb775ae6d9d068d5292b63b6be3da07928386636897575cc6b0f5a503372cf8f1778776a6602c&abStr=8651');
+        $curl->setUserAgent($this->userAgent);
+        $curl->setReferrer('http://218.205.252.24:18081/scmccCampaign/dazhuanpan/index.html?SSOCookie=' . $this->SSOCookie . '&value=isNeedLogin&tt=1&SSCid=0e6b1897bb458c6701a74aab00db25b6b4beb775ae6d9d068d5292b63b6be3da07928386636897575cc6b0f5a503372cf8f1778776a6602c&abStr=8651');
         $curl->setHeaders([
             'Accept' => 'application/json, text/javascript, */*; q=0.01',
             'X-Requested-With' => 'XMLHttpRequest',
             'Content-Type' => 'application/x-www-form-urlencoded; charset=UTF-8',
         ]);
         $curl->setCookies([
-            'SmsNoPwdLoginCookie' => $SSOCookie,
-            'smsCityCookie' => $smsCityCookie,
-            'cstamp' => $cstamp
+            'SmsNoPwdLoginCookie' => $this->SSOCookie,
+            'smsCityCookie' => $this->smsCityCookie,
+            'cstamp' => $this->cstamp
         ]);
         $curl->setTimeout(static::$timeOut);
         $curl->post(static::CMCC_LOTTERY_URL . '?t=' . mt_rand(), [
-            'SSOCookie' => $SSOCookie,
+            'SSOCookie' => $this->SSOCookie,
         ]);
 
         if ($curl->error) {
-            ServerChan::send($sendKey, $name . ' - Curl 错误 - 自动抽奖', "具体情况如下：\n\n" . $curl->errorCode . ' - ' . $curl->errorMessage);
-            throw new \Exception('Curl 错误 - 自动抽奖 #' . $curl->errorCode . ' - ' . $curl->errorMessage . "\n");
-        }
+            ServerChan::send(self::$config['errorReportSendKey'], sprintf('在为%s自动抽奖时，Curl出错', $this->name), "详情：\n" . $curl->errorMessage);
 
-        $curl->close();
+            return false;
+        }
 
         /**
          * 解析抽奖接口返回值
@@ -319,30 +379,129 @@ class CMCC
             $awardName = isset(static::$awards[$awardKey]) ? static::$awards[$awardKey] : '未知奖品';
 
             if (strpos($awardName, '定向') !== false) { // 抽中了没得任何卵用的定向视频流量
-                system_log($name . ' - 同没中奖，去你喵的没有任何卵用的' . $awardName . ' #' . $data->code . ' - ' . $data->obj . ' - ' . $data->info, 'LOG');
+                system_log($this->name . ' - 同没中奖，去你喵的没有任何卵用的' . $awardName . ' - ' . $data->info, 'LOG');
             } else {
-                system_log($name . ' - 恭喜你抽中' . $awardName . '，发财了发财了~ #' . $data->code . ' - ' . $data->obj . ' - ' . $data->info, 'LOG');
+                system_log($this->name . ' - 抽中' . $awardName . ' - ' . $data->info, 'LOG');
+
+                $this->getFlowInfo($curl);
 
                 // 推送到微信
-                ServerChan::send($sendKey, $name . ' - 恭喜你抽中' . $awardName . '，发财了发财了~', "具体情况如下：\n\ncode: " . $data->code . "\n\n" . ($data->info ?: 'ʅ（=ˇωˇ=）ʃ如题'));
+                ServerChan::send(
+                    $this->sendKey,
+                    sprintf('%s，恭喜你抽中%s，目前可用流量为：%s', $this->name, $awardName, $this->remainFlow),
+                    sprintf(
+                        "详情：\n抽中%s，另外\n#### 本月已用流量为：%s\n#### 剩余可用国内总流量为：%s\n距结算日%s天。\n\n流量机器人敬上",
+                        $awardName,
+                        $this->usedFlow,
+                        $this->remainFlow,
+                        $this->resetDayNum
+                    )
+                );
             }
         } else {
             switch ($data->code) {
                 case 1:
-                    system_log($name . ' - SSOCookie失效了，需要重新登录获取 #' . $data->code . ' - ' . $data->info, 'WARNING');
+                    system_log($this->name . ' - SSOCookie失效了，需要重新登录获取 - ' . $data->info, 'WARNING');
                     break;
                 case 13:
-                    system_log($name . ' - 网络异常 #' . $data->code . ' - ' . $data->info, 'WARNING');
+                    system_log($this->name . ' - 网络异常 - ' . $data->info, 'WARNING');
                     break;
                 case 4:
-                    system_log($name . ' - 今天已经参加过抽奖活动 #' . $data->code . ' - ' . $data->info, 'LOG');
+                    system_log($this->name . ' - 今天已经参加过抽奖活动 - ' . $data->info, 'LOG');
                     break;
                 default:
-                    system_log($name . ' - 日常不中奖 #' . $data->code . ' - ' . $data->info, 'LOG');
+                    system_log($this->name . ' - 日常不中奖 - ' . $data->info, 'LOG');
             }
         }
 
-        return $curl->response;
+        $response = $curl->response;
+        $curl->close();
+
+        return $response;
+    }
+
+    /**
+     * 获取流量情况
+     * @param object $curl
+     * @return array|mixed
+     * @throws ErrorException
+     */
+    public function getFlowInfo($curl)
+    {
+        $curl->setOpts([
+            CURLOPT_HTTPHEADER => [ // 设置 HTTP 头字段的数组。格式： array('Content-type: text/plain', 'Content-length: 100')，方便直接从fiddler中复制header信息
+                'Accept: */*',
+                'version: 3.5.0',
+                'channel: AppStore',
+                'Connection: keep-alive',
+                'Accept-Language: zh-Hans-CN;q=1, ja-JP;q=0.9',
+//                'Accept-Encoding: gzip, deflate', // 若声明此项，返回的数据也是gzip压缩的，故不声明
+                'platform: iphone',
+                'Content-Type: application/x-www-form-urlencoded',
+                'language: cn',
+                'User-Agent: SiChuan/3.5.0 (iPhone; iOS 12.0; Scale/3.00)',
+//                'Cookie: JSESSIONID=vniRU4y02GnBQPsggFTWK7iRBwVIYYI1iVkQAh06lhbEvrLmyAY3!-815831308; SmsNoPwdLoginCookie=xxx; cstamp=xxx; smsCityCookie=27 ' // 注意每个字段后是英文分号加空格，最后以一个空格结尾
+            ],
+//            CURLOPT_POSTFIELDS => 'auth=yes&appKey=00011&md5sign=6323D2BDABFF7D733A645D760F1F924B&internet=WiFi&sys_version=12.0&screen=1125*2001&model=iPhone&imei=xxx&deviceid=xxx&version=3.5.0&msgId=&jsonParam=%5B%7B%22dynamicURI%22:%22/queryFlow%22,%22dynamicParameter%22:%7B%22method%22:%22queryFlowLlzqNew%22%7D,%22dynamicDataNodeName%22:%20%22queryFlowLlzqNew_node%22%7D%5D', // Send raw data
+        ]);
+        $curl->post(self::CMCC_FLOW_INFO, [ // 此参数会覆盖CURLOPT_POSTFIELDS的值，不传此参数的话，CURLOPT_POSTFIELDS的值会被置为空
+            'auth' => 'yes',
+            'appKey' => '00011',
+            'md5sign' => '6323D2BDABFF7D733A645D760F1F924B',
+            'internet' => 'WiFi',
+            'sys_version' => '12.0',
+            'screen' => '1125*2001',
+            'model' => 'iPhone',
+            'imei' => self::$config['imei'],
+            'deviceid' => self::$config['imei'],
+            'version' => '3.5.0',
+            'msgId' => '',
+            'jsonParam' => '[{"dynamicURI":"/queryFlow","dynamicParameter":{"method":"queryFlowLlzqNew"},"dynamicDataNodeName": "queryFlowLlzqNew_node"}]',
+        ]);
+
+        if ($curl->error) {
+            ServerChan::send(self::$config['errorReportSendKey'], sprintf('在获取%s的流量情况时，Curl出错', $this->name), "详情：\n" . $curl->errorMessage);
+
+            return [];
+        }
+
+        $rt = $curl->response ? json_decode($curl->response, true) : [];
+
+        if (isset($rt['queryFlowLlzqNew_node']['resultObj']['FlowListAllList'][0])) {
+            $info = $rt['queryFlowLlzqNew_node']['resultObj']['FlowListAllList'][0];
+            $this->totalFlow = $this->formatFlow($info['CurFlowTotal']);
+            $this->remainFlow = $this->formatFlow($info['CurFlowRemain']);
+            $this->usedFlow = $this->formatFlow($info['CurFlowUsed']);
+            if (isset($rt['queryFlowLlzqNew_node']['resultObj']['JJSR'])) {
+                $this->resetDayNum = $rt['queryFlowLlzqNew_node']['resultObj']['JJSR'];
+            }
+
+            return $rt['queryFlowLlzqNew_node']['resultObj'];
+        }
+
+        return [];
+    }
+
+    /**
+     * 格式化流量值
+     * @param $orgValue
+     * @return string
+     */
+    private function formatFlow($orgValue)
+    {
+        $orgValue = floor($orgValue);
+        if ($orgValue >= 1024) {
+            $rtVal = round($orgValue / 1024, 2) . 'G';
+        } else {
+            $rtVal = $orgValue . 'M';
+        }
+
+        return $rtVal;
+    }
+
+    public function getConfig()
+    {
+        return self::$config;
     }
 }
 
@@ -351,36 +510,32 @@ try {
         throw new \Exception('非法触发。');
     }
 
-    $userInfo = require __DIR__ . DS . 'config.php';
-    foreach ($userInfo as $user) { // 多用户
+    $config = CMCC::instance()->getConfig();
+    foreach ($config['users'] as $user) { // 多用户
         /**
-         * 先签到
+         * 先赋值
          */
-        CMCC::instance()->autoSignIn(
-            $user['SSOCookie'],
-            $user['smsCityCookie'],
-            $user['cstamp'],
-            $user['userAgent'],
-            $user['name'],
-            $user['sendKey']
-        );
+        CMCC::instance()->SSOCookie = $user['SSOCookie'];
+        CMCC::instance()->smsCityCookie = $user['smsCityCookie'];
+        CMCC::instance()->cstamp = $user['cstamp'];
+        CMCC::instance()->userAgent = $user['userAgent'];
+        CMCC::instance()->name = $user['name'];
+        CMCC::instance()->sendKey = $user['sendKey'];
+
+        /**
+         * 接着签到
+         */
+        CMCC::instance()->autoSignIn();
 
         sleep(3);
 
         /**
          * 再抽奖
          */
-        CMCC::instance()->autoLottery(
-            $user['SSOCookie'],
-            $user['smsCityCookie'],
-            $user['cstamp'],
-            $user['userAgent'],
-            $user['name'],
-            $user['sendKey']
-        );
+        CMCC::instance()->autoLottery();
     }
 
-    echo '触发成功。';
+    echo '执行成功。';
 } catch (\Exception $e) {
     system_log($e->getMessage());
 }

@@ -24,7 +24,7 @@ class ServerChan
         $pushInfo = [
             'sendkey' => $sendKey,
             'text' => $title,
-            'desp' => $content
+            'desp' => str_replace("\n", "\n\n", $content) // Server酱接口限定，两个\n等于一个换行
         ];
 
         $curl = new Curl();

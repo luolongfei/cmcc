@@ -1,24 +1,30 @@
 {
     "_readme": [
         "This file locks the dependencies of your project to a known state",
-        "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file",
+        "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
     "content-hash": "1c3338b5532c6689f8d432dd44d06770",
     "packages": [
         {
             "name": "php-curl-class/php-curl-class",
-            "version": "8.1.0",
+            "version": "8.3.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/php-curl-class/php-curl-class.git",
-                "reference": "0090c30b4348028cabf1d03427423460ca7dc4a4"
+                "reference": "3193b41dcd19025ad579ea26eb48774421d84708"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/php-curl-class/php-curl-class/zipball/0090c30b4348028cabf1d03427423460ca7dc4a4",
-                "reference": "0090c30b4348028cabf1d03427423460ca7dc4a4",
-                "shasum": ""
+                "url": "https://api.github.com/repos/php-curl-class/php-curl-class/zipball/3193b41dcd19025ad579ea26eb48774421d84708",
+                "reference": "3193b41dcd19025ad579ea26eb48774421d84708",
+                "shasum": "",
+                "mirrors": [
+                    {
+                        "url": "https://dl.laravel-china.org/%package%/%reference%.%type%",
+                        "preferred": true
+                    }
+                ]
             },
             "require": {
                 "ext-curl": "*",
@@ -48,22 +54,28 @@
             "description": "PHP Curl Class makes it easy to send HTTP requests and integrate with web APIs.",
             "homepage": "https://github.com/php-curl-class/php-curl-class",
             "keywords": [
+                "API-Client",
                 "api",
                 "class",
                 "client",
                 "curl",
                 "framework",
                 "http",
-                "http client",
+                "http-client",
+                "http-proxy",
                 "json",
                 "php",
+                "php-curl",
+                "php-curl-library",
+                "proxy",
                 "requests",
-                "rest",
                 "restful",
-                "web service",
+                "web-scraper",
+                "web-scraping ",
+                "web-service",
                 "xml"
             ],
-            "time": "2018-06-06T05:01:44+00:00"
+            "time": "2018-09-09T07:05:39+00:00"
         }
     ],
     "packages-dev": [],
