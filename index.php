@@ -163,7 +163,7 @@ class CMCC
     /**
      * @var string 剩余流量
      */
-    public $remainFlow = '未知';
+    public $remainFlow = 0;
 
     /**
      * @var string 已用流量
@@ -174,6 +174,11 @@ class CMCC
      * @var string 距结算日天数
      */
     public $resetDayNum = '未知';
+
+    /**
+     * @var bool 是否已取得用户详情，防止重复获取用户信息
+     */
+    public $hasUserInfo = false;
 
     public function __construct()
     {
@@ -264,6 +269,7 @@ class CMCC
         }
 
         $prizeRes = '';
+        $obtainFlows = 0; // 兑奖取得流量总计
         $dayNum = $curl->response->result->obj->dayNum; // 已签天数
         foreach ($curl->response->result->obj->prizes as $prize) {
             if ($prize->DAYCOUNT <= $dayNum && $prize->DRAWSTATUS == 0 && strpos($prize->PRIZENAME, '视频') === false) { // 满足兑奖条件，忽略无用的定向流量
@@ -282,6 +288,9 @@ class CMCC
                     switch ($curl->response->result->code) {
                         case 0:
                             // 兑奖成功
+                            if (preg_match('/\d+/', $prize->PRIZENAME, $obtainFlow)) {
+                                $obtainFlows += $obtainFlow[1];
+                            }
                             $prizeRes .= str_replace('|', '', $prize->PRIZENAME) . '流量，';
                             break;
                         case 1:
@@ -316,17 +325,19 @@ class CMCC
         if ($prizeRes) {
             system_log($this->name . " - 通过签到兑换奖品 - " . $prizeRes . '喜大普奔。');
 
-            $this->getFlowInfo($curl);
+            $this->hasUserInfo || $this->getFlowInfo($curl);
+            $this->remainFlow += $obtainFlows;
+            $isRemainFlow = $this->formatFlow($this->remainFlow);
 
             ServerChan::send(
                 $this->sendKey,
-                sprintf('%s，机器人为你兑换了：%s当前可用流量为：%s', $this->name, $prizeRes, $this->remainFlow),
+                sprintf('%s，机器人为你兑换了：%s当前可用流量为：%s', $this->name, $prizeRes, $isRemainFlow),
                 sprintf(
-                    "详情：\n机器人替你签到**%s**天，**兑换了这些奖品：%s**have fun。\n另外\n#### 本月已用流量为：%s\n#### 剩余可用国内总流量为：%s\n距结算日%s天。\n\n流量机器人敬上",
+                    "详情：\n机器人替你签到**%s**天，**兑换了这些奖品：%s**have fun。\n另外\n#### 本月已用流量为：%s\n#### 剩余可用国内总流量为：%s\n距结算日%s天。流量可能不会马上到账，请在2小时后查询流量情况。\n\n流量机器人敬上",
                     $dayNum,
                     $prizeRes,
                     $this->usedFlow,
-                    $this->remainFlow,
+                    $isRemainFlow,
                     $this->resetDayNum
                 )
             );
@@ -383,17 +394,22 @@ class CMCC
             } else {
                 system_log($this->name . ' - 抽中' . $awardName . ' - ' . $data->info, 'LOG');
 
-                $this->getFlowInfo($curl);
+                $this->hasUserInfo || $this->getFlowInfo($curl);
+
+                if (preg_match('/\d+/', $awardName, $obtainFlow)) { // 流量不会实时更新，故先加上以确保数据准确
+                    $this->remainFlow += $obtainFlow[1];
+                }
+                $isRemainFlow = $this->formatFlow($this->remainFlow);
 
                 // 推送到微信
                 ServerChan::send(
                     $this->sendKey,
-                    sprintf('%s，恭喜你抽中%s，目前可用流量为：%s', $this->name, $awardName, $this->remainFlow),
+                    sprintf('%s，恭喜你抽中%s，目前可用流量为：%s', $this->name, $awardName, $isRemainFlow),
                     sprintf(
-                        "详情：\n抽中%s，另外\n#### 本月已用流量为：%s\n#### 剩余可用国内总流量为：%s\n距结算日%s天。\n\n流量机器人敬上",
+                        "详情：\n抽中%s，另外\n#### 本月已用流量为：%s\n#### 剩余可用国内总流量为：%s\n距结算日%s天。流量可能不会马上到账，请在2小时后查询流量情况。\n\n流量机器人敬上",
                         $awardName,
                         $this->usedFlow,
-                        $this->remainFlow,
+                        $isRemainFlow,
                         $this->resetDayNum
                     )
                 );
@@ -421,7 +437,7 @@ class CMCC
     }
 
     /**
-     * 获取流量情况
+     * 获取流量使用情况
      * @param object $curl
      * @return array|mixed
      * @throws ErrorException
@@ -470,11 +486,14 @@ class CMCC
         if (isset($rt['queryFlowLlzqNew_node']['resultObj']['FlowListAllList'][0])) {
             $info = $rt['queryFlowLlzqNew_node']['resultObj']['FlowListAllList'][0];
             $this->totalFlow = $this->formatFlow($info['CurFlowTotal']);
-            $this->remainFlow = $this->formatFlow($info['CurFlowRemain']);
+            $this->remainFlow = $info['CurFlowRemain']; // 剩余流量可能有变，暂不格式化
             $this->usedFlow = $this->formatFlow($info['CurFlowUsed']);
             if (isset($rt['queryFlowLlzqNew_node']['resultObj']['JJSR'])) {
                 $this->resetDayNum = $rt['queryFlowLlzqNew_node']['resultObj']['JJSR'];
             }
+
+            // 防止重复获取用户信息
+            $this->hasUserInfo = true;
 
             return $rt['queryFlowLlzqNew_node']['resultObj'];
         }
