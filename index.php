@@ -540,6 +540,8 @@ try {
         CMCC::instance()->userAgent = $user['userAgent'];
         CMCC::instance()->name = $user['name'];
         CMCC::instance()->sendKey = $user['sendKey'];
+        CMCC::instance()->hasUserInfo = false;
+        CMCC::instance()->remainFlow = 0;
 
         /**
          * 接着签到
