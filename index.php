@@ -397,7 +397,7 @@ class CMCC
                 $this->hasUserInfo || $this->getFlowInfo($curl);
 
                 if (preg_match('/\d+/', $awardName, $obtainFlow)) { // 流量不会实时更新，故先加上以确保数据准确
-                    $this->remainFlow += $obtainFlow[1];
+                    $this->remainFlow += intval($obtainFlow[0]);
                 }
                 $isRemainFlow = $this->formatFlow($this->remainFlow);
 
