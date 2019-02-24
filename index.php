@@ -85,7 +85,11 @@ class CMCC
     const CMCC_SIGNIN_URL = 'http://218.205.252.24:18081/scmccCampaign/signCalendar/sign.do';
 
     // CMCC抽奖地址
-    const CMCC_LOTTERY_URL = 'http://218.205.252.24:18081/scmccCampaign/dazhuanpan/dzpDraw.do';
+//    const CMCC_LOTTERY_URL = 'http://218.205.252.24:18081/scmccCampaign/dazhuanpan/dzpDraw.do';
+    const CMCC_LOTTERY_URL = 'https://wap.sc.10086.cn/scmccCampaign/dzpiteration/dzpDraw.do';
+
+    // CMCC分享地址
+    const CMCC_SHARE_URL = 'https://wap.sc.10086.cn/scmccCampaign/dzpiteration/dzpshare.do';
 
     // CMCC奖品信息地址
     const CMCC_PRIZEINFO_URL = 'http://218.205.252.24:18081/scmccCampaign/signCalendar/queryPrizeAndDrawStatus.do';
@@ -100,14 +104,14 @@ class CMCC
      * @var array 奖品
      */
     public static $awards = [
-        1 => '100M流量',
-        2 => '200M流量',
-        3 => '300M流量',
-        4 => '200M定向流量（无用）',
-        5 => '300M定向流量（无用）',
-        6 => '500M定向流量（无用）',
-        7 => '谢谢参与',
-        8 => '谢谢参与'
+        0 => '1G定向流量',
+        1 => '100M国内流量',
+        2 => '500M定向流量',
+        3 => '200M国内流量',
+        4 => '2G定向流量',
+        5 => '移动大王卡',
+        6 => '300M国内流量',
+        7 => '谢谢参与'
     ];
 
     /**
@@ -235,7 +239,7 @@ class CMCC
         switch ($data->code) {
             case 0:
                 // 签到成功
-                system_log($this->name .'，签到成功', 'LOG');
+                system_log($this->name . '，签到成功', 'LOG');
                 break;
             case 1:
                 system_log($error = sprintf('报告，%s的SSOCookie失效了，需要重新登录获取', $this->name), 'WARNING');
@@ -350,93 +354,6 @@ class CMCC
     }
 
     /**
-     * 自动抽奖
-     * @return bool|null
-     * @throws ErrorException
-     */
-    public function autoLottery()
-    {
-        $curl = new Curl();
-        $curl->setUserAgent($this->userAgent);
-        $curl->setReferrer('http://218.205.252.24:18081/scmccCampaign/dazhuanpan/index.html?SSOCookie=' . $this->SSOCookie . '&value=isNeedLogin&tt=1&SSCid=0e6b1897bb458c6701a74aab00db25b6b4beb775ae6d9d068d5292b63b6be3da07928386636897575cc6b0f5a503372cf8f1778776a6602c&abStr=8651');
-        $curl->setHeaders([
-            'Accept' => 'application/json, text/javascript, */*; q=0.01',
-            'X-Requested-With' => 'XMLHttpRequest',
-            'Content-Type' => 'application/x-www-form-urlencoded; charset=UTF-8',
-        ]);
-        $curl->setCookies([
-            'SmsNoPwdLoginCookie' => $this->SSOCookie,
-            'smsCityCookie' => $this->smsCityCookie,
-            'cstamp' => $this->cstamp
-        ]);
-        $curl->setTimeout(static::$timeOut);
-        $curl->post(static::CMCC_LOTTERY_URL . '?t=' . mt_rand(), [
-            'SSOCookie' => $this->SSOCookie,
-        ]);
-
-        if ($curl->error) {
-            ServerChan::send(self::$config['errorReportSendKey'], sprintf('在为%s自动抽奖时，Curl出错', $this->name), "详情：\n" . $curl->errorMessage);
-
-            return false;
-        }
-
-        /**
-         * 解析抽奖接口返回值
-         */
-        $data = $curl->response->dzpDraw;
-        if ($data->obj != null) { // 中奖的情况
-            // 取得奖品名称
-            $awardKey = $data->obj % 7;
-            $awardName = isset(static::$awards[$awardKey]) ? static::$awards[$awardKey] : '未知奖品';
-
-            if (strpos($awardName, '定向') !== false) { // 抽中了没得任何卵用的定向视频流量
-                system_log($this->name . ' - 同没中奖，去你喵的没有任何卵用的' . $awardName . ' - ' . $data->info, 'LOG');
-            } else {
-                system_log($this->name . ' - 抽中' . $awardName . ' - ' . $data->info, 'LOG');
-
-                $this->hasUserInfo || $this->getFlowInfo($curl);
-
-                if (preg_match('/\d+/', $awardName, $obtainFlow)) { // 流量不会实时更新，故先加上以确保数据准确
-                    $this->remainFlow += intval($obtainFlow[0]);
-                }
-                $isRemainFlow = $this->formatFlow($this->remainFlow);
-
-                // 推送到微信
-                ServerChan::send(
-                    $this->sendKey,
-                    sprintf('%s，恭喜你抽中%s，目前可用流量为：%s', $this->name, $awardName, $isRemainFlow),
-                    sprintf(
-                        "详情：\n抽中%s，另外\n#### 本月已用流量为：%s\n#### 剩余可用国内总流量为：%s\n距结算日%s天。流量可能不会马上到账，请在2小时后查询流量情况。\n\n流量机器人敬上",
-                        $awardName,
-                        $this->usedFlow,
-                        $isRemainFlow,
-                        $this->resetDayNum
-                    )
-                );
-            }
-        } else {
-            switch ($data->code) {
-                case 1:
-                    system_log($this->name . ' - SSOCookie失效了，需要重新登录获取 - ' . $data->info, 'WARNING');
-                    break;
-                case 13:
-                    system_log($this->name . ' - 网络异常 - ' . $data->info, 'WARNING');
-                    break;
-                case 4:
-                    system_log($this->name . ' - 今天已经参加过抽奖活动 - ' . $data->info, 'LOG');
-                    break;
-                default:
-                    system_log($this->name . ' - 日常不中奖 - ' . $data->info, 'LOG');
-            }
-        }
-
-        $response = $curl->response;
-        $curl->close();
-
-        return $response;
-    }
-
-    /**
      * 获取流量使用情况
      * @param object $curl
      * @return array|mixed
@@ -516,6 +433,128 @@ class CMCC
         }
 
         return $rtVal;
+    }
+
+    /**
+     * 自动抽奖
+     * @return bool|null
+     * @throws ErrorException
+     */
+    public function autoLottery()
+    {
+        $curl = new Curl();
+        $curl->setUserAgent($this->userAgent);
+        $curl->setReferrer('https://wap.sc.10086.cn/scmccCampaign/dzpiteration/index.html?abStr=8651');
+        $curl->setHeaders([
+            'Accept' => 'application/json, text/javascript, */*; q=0.01',
+            'X-Requested-With' => 'XMLHttpRequest',
+            'Content-Type' => 'application/x-www-form-urlencoded; charset=UTF-8',
+        ]);
+        $curl->setCookies([
+            'SmsNoPwdLoginCookie' => $this->SSOCookie,
+            'smsCityCookie' => $this->smsCityCookie,
+            'cstamp' => $this->cstamp
+        ]);
+        $curl->setTimeout(static::$timeOut);
+
+        $shared = false;
+        while (true) {
+            $curl->post(static::CMCC_LOTTERY_URL, [
+                'SSOCookie' => $this->SSOCookie,
+                'channel' => '',
+            ]);
+
+            if ($curl->error) {
+                ServerChan::send(self::$config['errorReportSendKey'], sprintf('在为%s自动抽奖时，Curl出错', $this->name), "详情：\n" . $curl->errorMessage);
+
+                return false;
+            }
+
+            /**
+             * 处理抽奖结果
+             */
+            $this->handleLotteryRt($curl);
+
+            sleep(1);
+
+            if (!$shared) { // 每天首次分享可再获一次抽奖机会
+                $curl->post(static::CMCC_SHARE_URL, [
+                    'SSOCookie' => $this->SSOCookie,
+                ]);
+                $shared = true;
+            } else {
+                break;
+            }
+        }
+
+        $curl->close();
+
+        return true;
+    }
+
+    /**
+     * 处理抽奖结果
+     * @param $curl
+     * @throws ErrorException
+     */
+    private function handleLotteryRt($curl)
+    {
+        $rt = $curl->response->result;
+        $code = (int)$rt->code;
+        $obj = $rt->obj;
+        if ($code === 0) { // 抽奖成功
+            // 取得奖品名称
+            $awardKey = isset($obj->si) ? $obj->si : '';
+            if ($awardKey == 99) {
+                $awardKey = 7; // 谢谢惠顾
+            } else if ($awardKey == 20) {
+                $awardKey = 5; // 大王卡
+            }
+            $awardName = isset(static::$awards[$awardKey]) ? static::$awards[$awardKey] : '未知奖品';
+
+            if (!in_array($awardKey, [1, 3, 6])) { // 抽中了没得任何卵用东西
+                system_log($this->name . ' - 同没中奖，去你喵的没有任何卵用的' . $awardName . ' - ' . $rt->info, 'LOG');
+            } else {
+                system_log($this->name . ' - 抽中' . $awardName . ' - ' . $rt->info, 'LOG');
+
+                $this->hasUserInfo || $this->getFlowInfo($curl);
+
+                if (preg_match('/\d+/', $awardName, $obtainFlow)) { // 流量不会实时更新，故先加上以确保数据准确
+                    $this->remainFlow += intval($obtainFlow[0]);
+                }
+                $isRemainFlow = $this->formatFlow($this->remainFlow);
+
+                // 推送到微信
+                ServerChan::send(
+                    $this->sendKey,
+                    sprintf('%s，恭喜你抽中%s，目前可用流量为：%s', $this->name, $awardName, $isRemainFlow),
+                    sprintf(
+                        "详情：\n抽中%s，另外\n#### 本月已用流量为：%s\n#### 剩余可用国内总流量为：%s\n距结算日%s天。流量可能不会马上到账，请在2小时后查询流量情况。\n\n流量机器人敬上",
+                        $awardName,
+                        $this->usedFlow,
+                        $isRemainFlow,
+                        $this->resetDayNum
+                    )
+                );
+            }
+        } else {
+            switch ($code) {
+                case 1:
+                    system_log($this->name . ' - SSOCookie失效了，需要重新登录获取 - ' . $rt->info, 'WARNING');
+                    break;
+                case 3:
+                    system_log($this->name . ' - 活动未开始或已结束 - ' . $rt->info, 'WARNING');
+                    break;
+                case 4:
+                    system_log($this->name . ' - 今天已经参加过抽奖活动 - ' . $rt->info, 'LOG');
+                    break;
+                case 5:
+                    system_log($this->name . ' - 请求频繁 - ' . $rt->info, 'LOG');
+                    break;
+                default:
+                    system_log($this->name . ' - 日常不中奖 - ' . $rt->info, 'LOG');
+            }
+        }
     }
 
     public function getConfig()
