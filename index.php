@@ -84,9 +84,13 @@ class CMCC
     // CMCC签到地址
     const CMCC_SIGNIN_URL = 'http://218.205.252.24:18081/scmccCampaign/signCalendar/sign.do';
 
+    // 抽奖前刷新资格
+    const CMCC_LOTTERY_INIT = 'http://wap.sc.10086.cn/scmccCampaign/dzpiteration/init.do';
+
     // CMCC抽奖地址
 //    const CMCC_LOTTERY_URL = 'http://218.205.252.24:18081/scmccCampaign/dazhuanpan/dzpDraw.do';
     const CMCC_LOTTERY_URL = 'https://wap.sc.10086.cn/scmccCampaign/dzpiteration/dzpDraw.do';
+
 
     // CMCC分享地址
     const CMCC_SHARE_URL = 'https://wap.sc.10086.cn/scmccCampaign/dzpiteration/dzpshare.do';
@@ -456,6 +460,11 @@ class CMCC
             'cstamp' => $this->cstamp
         ]);
         $curl->setTimeout(static::$timeOut);
+
+        // 抽奖前先刷新抽奖资格
+        $curl->post(self::CMCC_LOTTERY_INIT, [
+            'SSOCookie' => $this->SSOCookie,
+        ]);
 
         $shared = false;
         while (true) {
