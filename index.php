@@ -493,6 +493,11 @@ class CMCC
                 $shared = true;
 
                 sleep(30); // 防止操作频繁
+
+                // 抽奖前先刷新抽奖资格
+                $curl->post(self::CMCC_LOTTERY_INIT, [
+                    'SSOCookie' => $this->SSOCookie,
+                ]);
             } else {
                 break;
             }
