@@ -491,6 +491,8 @@ class CMCC
                     'SSOCookie' => $this->SSOCookie,
                 ]);
                 $shared = true;
+
+                sleep(30); // 防止操作频繁
             } else {
                 break;
             }
