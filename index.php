@@ -297,7 +297,7 @@ class CMCC
                         case 0:
                             // 兑奖成功
                             if (preg_match('/\d+/', $prize->PRIZENAME, $obtainFlow)) {
-                                $obtainFlows += $obtainFlow[1];
+                                $obtainFlows += ($obtainFlow[1] ?? 0);
                             }
                             $prizeRes .= str_replace('|', '', $prize->PRIZENAME) . '流量，';
                             break;
@@ -598,17 +598,25 @@ try {
         CMCC::instance()->hasUserInfo = false;
         CMCC::instance()->remainFlow = 0;
 
-        /**
-         * 接着签到
-         */
-        CMCC::instance()->autoSignIn();
+        try {
+            /**
+             * 接着签到
+             */
+            CMCC::instance()->autoSignIn();
+        } catch (\Exception $e) {
+            system_log($e->getMessage());
+        }
 
         sleep(3);
 
-        /**
-         * 再抽奖
-         */
-        CMCC::instance()->autoLottery();
+        try {
+            /**
+             * 再抽奖
+             */
+            CMCC::instance()->autoLottery();
+        } catch (\Exception $e) {
+            system_log($e->getMessage());
+        }
     }
 
     echo '执行成功。';
