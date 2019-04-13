@@ -249,7 +249,7 @@ class CMCC
                 system_log($error = sprintf('报告，%s的SSOCookie失效了，需要重新登录获取', $this->name), 'WARNING');
                 break;
             case 3:
-                system_log($error = sprintf('报告，在为%s自动签到时，发现活动未开始或已结束', $this->name));
+                system_log(sprintf('报告，在为%s自动签到时，发现活动未开始或已结束', $this->name));
                 break;
             case 2:
                 system_log($error = sprintf('报告，%s重复签到，请检查程序重复执行的原因', $this->name));
